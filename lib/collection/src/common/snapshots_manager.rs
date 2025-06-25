@@ -36,6 +36,7 @@ pub struct S3Config {
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
     pub endpoint_url: Option<String>,
+    pub with_env: Option<bool>,
 }
 
 pub struct SnapshotStorageCloud {
@@ -60,8 +61,13 @@ impl SnapshotStorageManager {
                 Ok(SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS))
             }
             SnapshotsStorageConfig::S3 => {
-                let mut builder = AmazonS3Builder::new();
-                if let Some(s3_config) = &snapshots_config.s3_config {
+                let builder = if let Some(s3_config) = &snapshots_config.s3_config {
+                    let mut builder = if s3_config.with_env.unwrap_or_default() {
+                        AmazonS3Builder::from_env()
+                    } else {
+                        AmazonS3Builder::new()
+                    };
+
                     builder = builder.with_bucket_name(&s3_config.bucket);
 
                     if let Some(access_key) = &s3_config.access_key {
@@ -79,7 +85,12 @@ impl SnapshotStorageManager {
                             builder = builder.with_allow_http(true);
                         }
                     }
-                }
+
+                    builder
+                } else {
+                    AmazonS3Builder::new()
+                };
+
                 let client: Box<dyn object_store::ObjectStore> =
                     Box::new(builder.build().map_err(|e| {
                         CollectionError::service_error(format!("Failed to create S3 client: {e}"))
